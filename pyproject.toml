@@ -1,0 +1,16 @@
+[project]
+name = "audio-handler-server"
+version = "0.1.0"
+description = "Voice pipeline server: Apple Watch audio → ElevenLabs STT → OpenClaw → ElevenLabs TTS → spoken response"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27.0",
+    "elevenlabs>=1.0.0",
+]
+
+[project.scripts]
+serve = "uvicorn server:app --host 0.0.0.0 --port 8000"
