@@ -11,7 +11,7 @@ from elevenlabs import ElevenLabs
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 load_dotenv()
 
@@ -102,10 +102,54 @@ async def synthesize(text: str) -> bytes:
     return await asyncio.to_thread(_synthesize, text)
 
 
+async def stream_openclaw(transcript: str, device: str, memo_id: str):
+    async with http.stream(
+        "POST",
+        f"{OPENCLAW_URL}/hooks/agent",
+        headers={"Authorization": f"Bearer {OPENCLAW_TOKEN}"},
+        json={
+            "message": transcript,
+            "name": "Voice Memo",
+            "device": device,
+            "memo_id": memo_id,
+            "wakeMode": "now",
+            "deliver": True,
+            "channel": "whatsapp",
+            "timeoutSeconds": 30,
+        },
+    ) as resp:
+        resp.raise_for_status()
+        async for chunk in resp.aiter_text():
+            yield chunk
+
+
 class TextInput(BaseModel):
     text: str
     device: str = "web"
     tts: bool = False
+
+
+class StreamInput(BaseModel):
+    text: str
+    device: str = "web"
+
+
+@app.post("/stream")
+async def stream_pipeline(body: StreamInput):
+    request_id = uuid.uuid4().hex[:8]
+    log.info(f"[{request_id}] Streaming text from {body.device}: {body.text[:80]}...")
+    memo_id = f"{request_id}-stream"
+
+    async def generate():
+        try:
+            async for chunk in stream_openclaw(body.text, body.device, memo_id):
+                yield f"data: {chunk}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            log.error(f"[{request_id}] Stream error: {e}")
+            yield f"data: {{'error': '{str(e)}'}}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/text")
