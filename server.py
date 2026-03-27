@@ -134,7 +134,7 @@ class StreamInput(BaseModel):
     device: str = "web"
 
 
-@app.post("/stream")
+@app.post("/stream-text")
 async def stream_pipeline(body: StreamInput):
     request_id = uuid.uuid4().hex[:8]
     log.info(f"[{request_id}] Streaming text from {body.device}: {body.text[:80]}...")
