@@ -236,7 +236,7 @@ async def voice_pipeline(
         media_type="audio/mpeg",
         headers={
             "X-Request-Id": request_id,
-            "X-Transcript": transcript[:200],
-            "X-Reply": reply[:200],
+            "X-Transcript": transcript[:200].encode("ascii", errors="replace").decode(),
+            "X-Reply": reply[:200].encode("ascii", errors="replace").decode(),
         },
     )
