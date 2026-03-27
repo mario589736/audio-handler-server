@@ -9,6 +9,7 @@ import httpx
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -99,6 +100,49 @@ def _synthesize(text: str) -> bytes:
 
 async def synthesize(text: str) -> bytes:
     return await asyncio.to_thread(_synthesize, text)
+
+
+class TextInput(BaseModel):
+    text: str
+    device: str = "web"
+    tts: bool = False
+
+
+@app.post("/text")
+async def text_pipeline(body: TextInput):
+    request_id = uuid.uuid4().hex[:8]
+    log.info(f"[{request_id}] Incoming text from {body.device}: {body.text[:80]}...")
+
+    memo_id = f"{request_id}-text"
+    t0 = time.monotonic()
+
+    try:
+        reply = await call_openclaw(body.text, body.device, memo_id)
+    except httpx.HTTPStatusError as e:
+        log.error(f"[{request_id}] OpenClaw returned {e.response.status_code}")
+        raise HTTPException(status_code=502, detail="AI backend error")
+    except Exception as e:
+        log.error(f"[{request_id}] OpenClaw unreachable: {e}")
+        raise HTTPException(status_code=502, detail="AI backend unreachable")
+    t1 = time.monotonic()
+    log.info(f"[{request_id}] OpenClaw done in {t1 - t0:.1f}s: {reply[:80]}...")
+
+    if body.tts:
+        try:
+            audio_response = await synthesize(reply)
+        except Exception as e:
+            log.error(f"[{request_id}] TTS failed: {e}")
+            raise HTTPException(status_code=502, detail="Speech synthesis unavailable")
+        t2 = time.monotonic()
+        log.info(f"[{request_id}] TTS done in {t2 - t1:.1f}s, total: {t2 - t0:.1f}s")
+        return Response(
+            content=audio_response,
+            media_type="audio/mpeg",
+            headers={"X-Request-Id": request_id, "X-Reply": reply[:200]},
+        )
+
+    log.info(f"[{request_id}] Total: {t1 - t0:.1f}s")
+    return {"request_id": request_id, "reply": reply}
 
 
 @app.post("/voice")
